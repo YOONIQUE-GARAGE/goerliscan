@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/big"
 	"net/http"
 	"rnd/goerliscan/explore/config"
@@ -19,14 +18,22 @@ import (
 )
 
 type Model struct {
-	colBlock      *mongo.Collection
-	colTransaction *mongo.Collection
-	db            *mongo.Database
+	colHeader 			*mongo.Collection
+	colBlock      	*mongo.Collection
+	colTransaction 	*mongo.Collection
+	db            	*mongo.Database
+}
+
+type Header struct {
+	BlockNumber  	uint64      `bson:"blockNumber"`
+	ParentHash		string      `bson:"parentHash"`
+	Bloom					[]byte 			`bson:"bloom"`
+	Time         	string      `bson:"timestamp"`
+	Nonce        	string      `bson:"nonce"`
 }
 
 type Block struct {
 	BlockNumber  	uint64      `bson:"blockNumber"`
-	Time         	string      `bson:"timestamp"`
 	FeeRecipient  string	    `bson:"feeRecipient"`
 	BlockSize			uint64      `bson:"blockSize"`
 	GasUsed      	uint64      `bson:"gasUsed"`
@@ -35,9 +42,7 @@ type Block struct {
 	BurntFees			*big.Int		`bson:"burntFees"`
 	ExtraData			string		  `bson:"extraData"`
 	BlockHash    	string      `bson:"blockHash"`
-	ParentHash		string      `bson:"parentHash"`
 	StateRoot     string			`bson:"stateRoot"`
-	Nonce        	string      `bson:"nonce"`
 	Transactions 	[]string 		`bson:"transactions"`
 }
 
@@ -57,23 +62,31 @@ type Transaction struct {
 }
 
 // Allinfo struct
-type Result struct {
-	Blocks      []Block
-	Transactions []Transaction
+type AllData struct {
+	Headers 			[]Header
+	Blocks      	[]Block
+	Transactions	[]Transaction
+}
+
+type OneBlock struct {
+	Header		Header
+	Block   	Block
 }
 
 // Setting Model
 func NewModel(config *config.Config) (*Model, error) {
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(config.Database.Host))
 	if err != nil {
-		log.Fatal(err)
+		logger.Debug("Can't get mongoClient")
 		return nil, err
 	}
 
 	db := client.Database(config.Database.Name)
+	colHeader := db.Collection("header")
 	colBlock := db.Collection("block")
 	colTransaction := db.Collection("transaction")
 	model := &Model{
+		colHeader: colHeader,
 		colBlock:      colBlock,
 		colTransaction: colTransaction,
 		db:            db,
@@ -90,49 +103,68 @@ func (m *Model) RespOK(c *gin.Context, resp interface{}) {
 }
 
 // get Blocks and Transactions
-func (m *Model) GetAll() (Result, error){
+func (m *Model) GetAll() (AllData, error){
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
-	// findBlocks with fiter
 	filter := bson.D{}
-	cursor, err := m.colBlock.Find(ctx, filter)
+	
+	// Header
+	cursor, err := m.colHeader.Find(ctx, filter)
 	if err != nil {
-		panic(err)
+		logger.Debug("Can't get allHeaders")
+	}
+	// header into headers 
+	var headers []Header
+	for cursor.Next(ctx) {
+		var header Header
+		if err := cursor.Decode(&header); err != nil {
+			logger.Debug("Can't unmarshalling")
+		}
+		headers = append(headers, header)
+		_, err := json.MarshalIndent(header, "prefix string", " ")
+		if err != nil {
+			logger.Debug("Can't MarshalIndent")
+		}
+	}
+	// Block
+	cursor, err = m.colBlock.Find(ctx, filter)
+	if err != nil {
+		logger.Debug("Can't get allBlocks")
 	}
 	// block into blocks 
 	var blocks []Block
 	for cursor.Next(ctx) {
 		var block Block
 		if err := cursor.Decode(&block); err != nil {
-			panic(err)
+			logger.Debug("Can't unmarshalling")
 		}
 		blocks = append(blocks, block)
 		_, err := json.MarshalIndent(block, "prefix string", " ")
 		if err != nil {
-			panic(err)
+			logger.Debug("Can't MarshalIndent")
 		}
 	}
-
+	// Transaction
 	cursor, err = m.colTransaction.Find(ctx, filter)
 	if err != nil {
-		panic(err)
+		logger.Debug("Can't get allTxs")
 	}
 	// tx into txs 
 	var txs []Transaction
 	for cursor.Next(ctx) {
 		var tx Transaction
 		if err := cursor.Decode(&tx); err != nil {
-			panic(err)
+			logger.Debug("Can't unmarshalling")
 		}
 		txs = append(txs, tx)
 		_, err := json.MarshalIndent(tx, "prefix string", " ")
 		if err != nil {
-			panic(err)
+			logger.Debug("Can't MarshalIndent")
 		}
 	}
 
-	result := Result{
+	result := AllData{
+		Headers: headers,
 		Blocks:      blocks,
 		Transactions: txs,
 	}
@@ -145,56 +177,52 @@ func (m *Model) GetMore(elem string) (interface{}, error){
 	filter := bson.D{}
 	// elem에 따른 데이터 분기
 	if elem == "blocks" {
-		cursor, err := m.colBlock.Find(ctx, filter)
+		// header & block 
+		cursor, err := m.colHeader.Find(ctx, filter)
 		if err != nil {
-			panic(err)
+			logger.Debug("Cant't get more header data")
 		}
 		// block into blocks 
 		var blocks []Block
 		for cursor.Next(ctx) {
 			var block Block
 			if err := cursor.Decode(&block); err != nil {
-				panic(err)
+				logger.Debug("Can't get more block datas")
 			}
 			blocks = append(blocks, block)
 			_, err := json.MarshalIndent(block, "prefix string", " ")
 			if err != nil {
-				logger.Error(err)
-				panic(err)
+				logger.Debug("Can't MarshalIndent")
 			}
 		}
 		return blocks, nil
 	} else if elem == "txs" {
 		cursor, err := m.colTransaction.Find(ctx, filter)
 		if err != nil {
-			logger.Error(err)
-			panic(err)
+			logger.Debug("Cant't get more tx data")
 		}
 		// tx into txs 
 		var txs []Transaction
 		for cursor.Next(ctx) {
 			var tx Transaction
 			if err := cursor.Decode(&tx); err != nil {
-				logger.Error(err)
-				panic(err)
+				logger.Debug("Cant't get more tx data")
 			}
 			txs = append(txs, tx)
-			output, err := json.MarshalIndent(tx, "prefix string", " ")
+			_, err := json.MarshalIndent(tx, "prefix string", " ")
 			if err != nil {
-				logger.Error(err)
-				panic(err)
+				logger.Debug("Can't MarshalIndent")
 			}
-			logger.Debug(output)
 		}
 		return txs, nil
 	} else {
-		logger.Error("transaction with hash %s not found")
+		logger.Debug("transaction with hash %s not found", elem)
 		return fmt.Errorf("transaction with hash %s not found", elem), nil
 	}
 }
 
 // MainPage에서 blockNumber 클릭 시
-func (m *Model) GetOneBlcok(elem string) (Block, error) {
+func (m *Model) GetOneBlcok(elem string) (OneBlock, error) {
 	opts := []*options.FindOneOptions{}
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -203,16 +231,24 @@ func (m *Model) GetOneBlcok(elem string) (Block, error) {
 	// parameter에 다른 분기
 	elemToint, err := strconv.ParseInt(elem, 10, 64)
 	if err != nil {
-		panic(err)
+		logger.Debug("Can't parsing elem")
 	}
 	filter := bson.M{"blockNumber": elemToint}
 		
+	var header Header
+	if err := m.colHeader.FindOne(ctx, filter, opts...).Decode(&header); err != nil {
+		logger.Debug("No Header Documents")
+	} 
+
 	var block Block
 	if err := m.colBlock.FindOne(ctx, filter, opts...).Decode(&block); err != nil {
-		return block, err
-	} else {
-		return block, nil
+		logger.Debug("No Block Documents")
 	}
+	result := OneBlock{
+		Header: header,
+		Block:  block,
+	}
+	return result, err
 }
 
 // MainPage에서 txHash 클릭 시
@@ -226,51 +262,10 @@ func (m *Model) GetOneTransaction(elem string) (Transaction, error) {
 
 	var tx Transaction
 	if err := m.colTransaction.FindOne(ctx, filter, opts...).Decode(&tx); err != nil {
+		logger.Debug("No Tx Documents")
 		return tx, err
 	} else {
 		return tx, nil
 	}
 }
 
-// from이나 to의 address로 조회시 
-// func (b *Model) GetTransactions(elem string) ([]Transaction, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-// 	defer cancel()
-// 	// findBlocks with filter
-// 	filter := bson.M{
-// 		"transactions": bson.M{
-// 			"$elemMatch": bson.M{
-// 				"$or": []bson.M{
-// 					{"from": elem},
-// 					{"to": elem},
-// 				},
-// 			},
-// 		},
-// 	}
-// 	cursor, err := b.colBlock.Find(ctx, filter)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	// transactions into slice
-// 	var transactions []Transaction
-// 	for cursor.Next(ctx) {
-// 		var block Block
-// 		if err := cursor.Decode(&block); err != nil {
-// 			panic(err)
-// 		}
-
-// 		// Filter transactions to include only those that match the condition
-// 		for _, tx := range block.Transactions {
-// 			if tx.From == elem || tx.To == elem {
-// 				transactions = append(transactions, tx)
-// 			}
-// 		}
-
-// 		output, err := json.MarshalIndent(block, "prefix string", " ")
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		fmt.Printf("%s\n", output)
-// 	}
-// 	return transactions, err
-// }

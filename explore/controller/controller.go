@@ -2,7 +2,6 @@ package controller
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"rnd/goerliscan/explore/logger"
 	"rnd/goerliscan/explore/model"
@@ -34,8 +33,6 @@ func (b *Controller) RespOK(c *gin.Context, resp interface{}) {
 func (b *Controller) RespError(c *gin.Context, body interface{}, status int, err ...interface{}) {
 	bytes, _ := json.Marshal(body)
 
-	fmt.Println("Request error", "path", c.FullPath(), "body", bytes, "status", status, "error", err)
-
 	c.JSON(status, gin.H{
 		"Error":  "Request Error",
 		"path":   c.FullPath(),
@@ -51,18 +48,19 @@ func (b *Controller) GetOK(c *gin.Context, resp interface{}) {
 }
 
 // MainPage
-func (b *Controller) GetAllInfo(c *gin.Context) {
+func (b *Controller) GetAll(c *gin.Context) {
 	logger.Debug(c.ClientIP())
-	if blocks, err := b.md.GetAll(); err != nil {
-		logger.Error(err.Error())
+	if datas, err := b.md.GetAll(); err != nil {
+		logger.Debug("Can't get all datas")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "fail",
 			"body": err.Error(),
 		})
 	} else {
+		logger.Debug("Can get all datas")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "ok",
-			"body": blocks,
+			"body": datas,
 		})
 	}
 }
@@ -74,37 +72,39 @@ func (b *Controller) GetMore(c *gin.Context) {
 	parts := strings.Split(path, "/")
 	lastPart := parts[len(parts)-1]
 
-	if block, err := b.md.GetMore(lastPart); err != nil {
-		logger.Error(err.Error())
+	if moreDatas, err := b.md.GetMore(lastPart); err != nil {
+		logger.Debug("Can't get more datas")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "fail",
 			"body": err.Error(),
 		})
 	} else {
+		logger.Debug("Can get more datas")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "ok",
-			"body": block,
+			"body": moreDatas,
 		})
 	}
 }
-
 
 func (b *Controller) GetBlockWithHeight(c *gin.Context) {
 	logger.Debug(c.ClientIP())
 	height := c.Param("height")
 	if len(height) <= 0 {
+		logger.Debug("fail, Not Found Param")
 		b.RespError(c, nil, 400, "fail, Not Found Param", nil)
 		c.Abort()
 		return
 	}
 
 	if block, err := b.md.GetOneBlcok(height); err != nil {
-		logger.Error(err.Error())
+		logger.Debug("Can't get one block")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "fail",
 			"body": err.Error(),
 		})
 	} else {
+		logger.Debug("Can get one block")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "ok",
 			"body": block,
@@ -114,22 +114,23 @@ func (b *Controller) GetBlockWithHeight(c *gin.Context) {
 
 func (b *Controller) GetBlockWithHash(c *gin.Context) {
 	logger.Debug(c.ClientIP())
-
 	hash := c.Param("hash")
 	if len(hash) <= 0 {
+		logger.Debug("fail, Not Found Param")
 		b.RespError(c, nil, 400, "fail, Not Found Param", nil)
 		c.Abort()
 		return
 	}
 
 	if block, err := b.md.GetOneTransaction(hash); err != nil {
-		logger.Error(err.Error())
+		logger.Debug("Can't get one transaction")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "fail",
 			"body": err.Error(),
 		})
 		c.Abort()
 	} else {
+		logger.Debug("Can get one transaction")
 		c.JSON(http.StatusOK, gin.H{
 			"res":  "ok",
 			"body": block,

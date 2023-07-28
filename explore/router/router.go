@@ -14,7 +14,6 @@ func NewRouter(ct *ctl.Controller) (*Router, error) {
 	r := &Router{
 		ct: ct,
 	}
-
 	return r, nil
 }
 
@@ -38,7 +37,7 @@ func (b *Router) Idx() *gin.Engine {
 	e.Use(gin.Recovery())
 	e.Use(CORS())
 
-	e.GET("/", b.ct.GetAllInfo)
+	e.GET("/", b.ct.GetAll)
 	e.GET("/blocks", b.ct.GetMore)
 	e.GET("/txs", b.ct.GetMore) 
 	e.GET("/block/:height", b.ct.GetBlockWithHeight)

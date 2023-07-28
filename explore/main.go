@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"rnd/goerliscan/explore/config"
 	ctl "rnd/goerliscan/explore/controller"
 	"rnd/goerliscan/explore/logger"
 	"rnd/goerliscan/explore/model"
 	rt "rnd/goerliscan/explore/router"
+	"syscall"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -50,11 +54,31 @@ func main() {
 
 		g.Go(func() error {
 			return mapi.ListenAndServe()
-		})
+		})	
+
+		// Graceful shutdown
+		// Wait for either an error or termination signal
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		logger.Warn("Shutdown Server ...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := mapi.Shutdown(ctx); err != nil {
+			logger.Error("Server Shutdown:", err)
+		}
+
+		select {
+			case <-ctx.Done():
+				logger.Info("timeout of 5 seconds.")
+		}
 
 		logger.Info("Server exiting")
 	}
+
 	if err := g.Wait(); err != nil {
 		logger.Error(err)
 	}
+
 }
