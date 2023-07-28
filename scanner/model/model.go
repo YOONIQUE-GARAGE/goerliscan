@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"math/big"
@@ -9,32 +11,40 @@ import (
 	"rnd/goerliscan/scanner/logger"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Model struct {
+	colHeader 			*mongo.Collection
 	colBlock      *mongo.Collection
 	colTransaction *mongo.Collection
 	db            *mongo.Database
 }
 
+type Header struct {
+	BlockNumber  	uint64      `bson:"blockNumber"`
+	ParentHash		string      `bson:"parentHash"`
+	Bloom					[]byte 			`bson:"bloom"`
+	Time         	string      `bson:"timestamp"`
+	Nonce        	string      `bson:"nonce"`
+}
+
 type Block struct {
-	BlockNumber  	uint64        `bson:"blockNumber"`
-	Time         	string        `bson:"timestamp"`
-	FeeRecipient  string	      `bson:"feeRecipient"`
-	BlockSize			uint64        `bson:"blockSize"`
-	GasUsed      	uint64        `bson:"gasUsed"`
-	GasLimit     	uint64        `bson:"gasLimit"`
+	BlockNumber  	uint64      `bson:"blockNumber"`
+	FeeRecipient  string	    `bson:"feeRecipient"`
+	BlockSize			uint64      `bson:"blockSize"`
+	GasUsed      	uint64      `bson:"gasUsed"`
+	GasLimit     	uint64      `bson:"gasLimit"`
 	BaseFeePerGas *big.Int    `bson:"baseFeePerGas"`
 	BurntFees			*big.Int		`bson:"burntFees"`
-	ExtraData			string				`bson:"extraData"`
-	BlockHash    	string        `bson:"blockHash"`
-	ParentHash		string        `bson:"parentHash"`
-	StateRoot     string				`bson:"stateRoot"`
-	Nonce        	string        `bson:"nonce"`
-	Transactions 	[]string `bson:"transactions"`
+	ExtraData			string		  `bson:"extraData"`
+	BlockHash    	string      `bson:"blockHash"`
+	StateRoot     string			`bson:"stateRoot"`
+	Transactions 	[]string 		`bson:"transactions"`
 }
 
 type Transaction struct {
@@ -44,9 +54,9 @@ type Transaction struct {
 	From        		string  	 `bson:"from"`
 	To          		string  	 `bson:"to"` // return nil for contract
 	Value      			*big.Int	 `bson:"amount"`
-	TransactionFee 	*big.Int `bson:"transactionFee"`
+	TransactionFee 	*big.Int 	 `bson:"transactionFee"`
 	GasPrice    		*big.Int   `bson:"gasPrice"`
-	GasUsed					uint64	 `bson:"gasUsed"`
+	GasUsed					uint64	 	 `bson:"gasUsed"`
 	GasLimit    		uint64  	 `bson:"gasLimit"`
 	BlockHash   		string  	 `bson:"blockHash"`
 	BlockNumber 		uint64  	 `bson:"blockNumber"`
@@ -61,14 +71,111 @@ func NewModel(config *config.Config) (*Model, error) {
 	}
 
 	db := client.Database(config.Database.Name)
+	colHeader := db.Collection("header")
 	colBlock := db.Collection("block")
 	colTransaction := db.Collection("transaction")
 	model := &Model{
+		colHeader: colHeader,
 		colBlock:      colBlock,
 		colTransaction: colTransaction,
 		db:            db,
 	}
 	return model, nil
+}
+
+// Get Header Data to th ethclient
+func GetHeaderData(header *types.Header, block *types.Block) Header{
+	timestamp := int64(block.Time())
+	timeUTC := time.Unix(timestamp, 0).UTC()
+	utcTimeFormatted := timeUTC.Format("2006-01-02 15:04:05 AM MST")
+	nonce := binary.BigEndian.Uint64(header.Nonce[:])
+	hexNonce := fmt.Sprintf("0x%016x", nonce)
+	h := Header{
+		BlockNumber: block.Number().Uint64(),  	
+		ParentHash:	block.ParentHash().Hex(),	 
+		Bloom: header.Bloom[:],
+		Time: utcTimeFormatted, 
+		Nonce: hexNonce,  
+	}     
+	return h
+}
+
+// Get Block Data to th ethclient
+func GetBlockData(header *types.Header, block *types.Block) Block {
+	
+	gasUsed := block.GasUsed()
+	baseFeePerGas := block.BaseFee()
+	burntFees := new(big.Int).Mul(baseFeePerGas, new(big.Int).SetUint64(gasUsed))
+	
+	extraData := hex.EncodeToString(block.Extra())
+				// Create block structure
+	b := Block{
+		BlockNumber: block.Number().Uint64(),  		
+		FeeRecipient: block.Coinbase().Hex(),  
+		BlockSize: block.Size(),			
+		GasUsed: gasUsed,     	
+		GasLimit: block.GasLimit(),     	
+		BaseFeePerGas: baseFeePerGas,
+		BurntFees: burntFees,
+		ExtraData: extraData,		
+		BlockHash: block.Hash().Hex(),
+		StateRoot: block.Root().Hex(), 
+		Transactions: make([]string, 0),
+	}
+	return b
+}
+// Get Txs Data to th ethclient
+func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transaction, block *types.Block) Transaction {
+	signer := types.LatestSignerForChainID(tx.ChainId())
+	sender, err := types.Sender(signer, tx)
+	if err != nil {
+		logger.Error(err)
+		panic(err)
+	}
+	// Get the transaction receipt
+	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		logger.Error(err)
+		panic(err)
+	}
+	var status string
+	if receipt.Status == 1 {
+		status = "Success"
+	} else if receipt.Status == 0 {
+		status = "Fail"
+	} else {
+		status = "Unknown"
+	}
+
+	value := tx.Value()
+	gasUsed := receipt.GasUsed
+	gasPrice := tx.GasPrice()
+	transactionFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), gasPrice)
+	timestamp := int64(block.Time())
+	timeUTC := time.Unix(timestamp, 0).UTC()
+	utcTimeFormatted := timeUTC.Format("2006-01-02 15:04:05 AM MST")
+	
+	// Create transaction structure
+	t:= Transaction{
+		Hash: tx.Hash().Hex(),        		
+		Status: status,      		
+		Time: utcTimeFormatted,        		
+		From: sender.Hex(),        	
+		To: "",          		
+		Value: value,      			
+		TransactionFee: transactionFee, 	
+		GasPrice: tx.GasPrice(),    		
+		GasUsed: gasUsed,					
+		GasLimit: tx.Gas(),    		
+		BlockHash: block.Hash().Hex(),
+		BlockNumber: block.Number().Uint64(), 		   		    
+	}
+
+	if tx.To() != nil {
+		t.To = tx.To().Hex()
+	}
+
+	return t
 }
 
 // Get LatestBlock
@@ -91,7 +198,18 @@ func (m *Model) GetLatestBlockNumber() (uint64, error) {
 	return result.BlockNumber, nil
 }
 
-// Save BlcokInfo
+// Save Header
+func (m *Model) SaveHeader(header *Header) error {
+	result, err := m.colHeader.InsertOne(context.Background(), header)
+	if err != nil {
+		logger.Error(err)
+		return err
+	}
+	logger.Info(fmt.Sprintf("insertId: %s", result.InsertedID))
+	return nil
+}
+
+// Save Blcok
 func (m *Model) SaveBlock(block *Block) error {
 	_, err := m.colBlock.InsertOne(context.Background(), block)
 	if err != nil {
@@ -101,7 +219,7 @@ func (m *Model) SaveBlock(block *Block) error {
 	return nil
 }
 
-// Save TransactionInfo
+// Save Transaction
 func (m *Model) SaveTransaction(transaction *Transaction) error {
 	result, err := m.colTransaction.InsertOne(context.Background(), transaction)
 	if err != nil {
@@ -112,15 +230,4 @@ func (m *Model) SaveTransaction(transaction *Transaction) error {
 	return nil
 }
 
-func (m *Model) RemoveTxs(blockNumber uint64) error {
-	opts := []*options.DeleteOptions{} 
-	filter := bson.M{"blockNumber": blockNumber}
-	
-	result, err := m.colTransaction.DeleteMany(context.Background(), filter, opts...)
-	if err != nil {
-		return err
-	} 
 
-	logger.Info(fmt.Sprintf("DeleteCount: %d", result.DeletedCount))
-	return nil
-}
