@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"math/big"
 	"rnd/goerliscan/scanner/config"
 	"rnd/goerliscan/scanner/logger"
@@ -66,7 +65,7 @@ type Transaction struct {
 func NewModel(config *config.Config) (*Model, error) {
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(config.Database.Host))
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err)
 		return nil, err
 	}
 
@@ -84,7 +83,8 @@ func NewModel(config *config.Config) (*Model, error) {
 }
 
 // Get Header Data to th ethclient
-func GetHeaderData(header *types.Header, block *types.Block) Header{
+func GetHeaderData(header *types.Header, block *types.Block, c chan Header){
+	logger.Debug("GetHeaderData: start")
 	timestamp := int64(block.Time())
 	timeUTC := time.Unix(timestamp, 0).UTC()
 	utcTimeFormatted := timeUTC.Format("2006-01-02 15:04:05 AM MST")
@@ -97,12 +97,12 @@ func GetHeaderData(header *types.Header, block *types.Block) Header{
 		Time: utcTimeFormatted, 
 		Nonce: hexNonce,  
 	}     
-	return h
+	c <- h
 }
 
 // Get Block Data to th ethclient
-func GetBlockData(header *types.Header, block *types.Block) Block {
-	
+func GetBlockData(header *types.Header, block *types.Block, c chan Block) {
+	logger.Debug("GetBlockData: start")
 	gasUsed := block.GasUsed()
 	baseFeePerGas := block.BaseFee()
 	burntFees := new(big.Int).Mul(baseFeePerGas, new(big.Int).SetUint64(gasUsed))
@@ -122,22 +122,22 @@ func GetBlockData(header *types.Header, block *types.Block) Block {
 		StateRoot: block.Root().Hex(), 
 		Transactions: make([]string, 0),
 	}
-	return b
+	c <- b
 }
 // Get Txs Data to th ethclient
-func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transaction, block *types.Block) Transaction {
+func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transaction, block *types.Block) (Transaction, error) {
+	logger.Debug("GetTxsData: start")
 	signer := types.LatestSignerForChainID(tx.ChainId())
 	sender, err := types.Sender(signer, tx)
 	if err != nil {
-		logger.Error(err)
-		panic(err)
+		logger.Debug("GetTxsData: Can't get sender")
 	}
 	// Get the transaction receipt
 	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
-		logger.Error(err)
-		panic(err)
+		logger.Debug("GetTxsData: Can't get receipt")
 	}
+	// Int to string
 	var status string
 	if receipt.Status == 1 {
 		status = "Success"
@@ -146,7 +146,7 @@ func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transa
 	} else {
 		status = "Unknown"
 	}
-
+	// Get data
 	value := tx.Value()
 	gasUsed := receipt.GasUsed
 	gasPrice := tx.GasPrice()
@@ -175,7 +175,7 @@ func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transa
 		t.To = tx.To().Hex()
 	}
 
-	return t
+	return t, nil
 }
 
 // Get LatestBlock
@@ -188,45 +188,55 @@ func (m *Model) GetLatestBlockNumber() (uint64, error) {
 	var result Block
 	err := m.colBlock.FindOne(ctx, bson.M{}, opts).Decode(&result)
 	if err == mongo.ErrNoDocuments {
-		// No block found in the database, return 0 as the latest block number
+		logger.Debug("GetLatestBlockNumber: Nonexist Documents")
 		return 0, nil
 	} else if err != nil {
-		// log.Fatal(err)
+		logger.Debug("GetLatestBlockNumber: Can't get latestBlockNumber")
 		return 0, err
 	}
-
+	logger.Debug(fmt.Sprintf("GetLatestBlockNumber: %d", result.BlockNumber))
 	return result.BlockNumber, nil
 }
 
 // Save Header
 func (m *Model) SaveHeader(header *Header) error {
+	logger.Debug("SaveHeader: start")
 	result, err := m.colHeader.InsertOne(context.Background(), header)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug("Can't Insert HeaderData")
 		return err
 	}
-	logger.Info(fmt.Sprintf("insertId: %s", result.InsertedID))
+	logger.Debug(fmt.Sprintf("SaveHeader: HeaderInsertId %s", result.InsertedID))
 	return nil
 }
 
 // Save Blcok
 func (m *Model) SaveBlock(block *Block) error {
-	_, err := m.colBlock.InsertOne(context.Background(), block)
+	logger.Debug("SaveBlock: start")
+	result, err := m.colBlock.InsertOne(context.Background(), block)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug("SaveBlock: Can't Insert Block")
 		return err
 	}
+	logger.Debug(fmt.Sprintf("SaveBlock: BlockInsertId %s", result.InsertedID))
 	return nil
 }
 
 // Save Transaction
 func (m *Model) SaveTransaction(transaction *Transaction) error {
-	result, err := m.colTransaction.InsertOne(context.Background(), transaction)
+	logger.Debug("SaveTransaction: start")
+	filter := bson.D{{Key: "hash", Value: transaction.Hash}}
+	opts := options.Replace().SetUpsert(true)
+	result, err := m.colTransaction.ReplaceOne(context.Background(), filter, transaction, opts)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug("SaveTransaction: Can't Upsert Tx")
 		return err
 	}
-	logger.Info(fmt.Sprintf("insertId: %s", result.InsertedID))
+	if result.MatchedCount > 0 {
+		logger.Debug("SaveTransaction: Insert Done")
+	} else {
+		logger.Debug("SaveTransaction: Update Done")
+	}
 	return nil
 }
 

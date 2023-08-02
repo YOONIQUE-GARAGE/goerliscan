@@ -26,6 +26,12 @@ func main() {
 	logger.Debug("ready server....")
 
 	// Create separate models for blocks and transactions
+	headerModel, err := model.NewModel(cf)
+	if err != nil {
+		logger.Error(err)
+		panic(err)
+	}
+
 	blockModel, err := model.NewModel(cf)
 	if err != nil {
 		logger.Error(err)
@@ -43,7 +49,7 @@ func main() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		err := ctl.StartScanner(cf, blockModel, transactionModel)
+		err := ctl.StartScanner(cf, headerModel, blockModel, transactionModel)
 		if err != nil {
 			logger.Warn("StartScanner error")
 		}
@@ -56,5 +62,5 @@ func main() {
 	logger.Warn("Shutting down the scanner...")
 	// Wait for the scanner goroutine to finish
 	<-done
-	logger.Info("Scanner exited gracefully.")
+	logger.Debug("Scanner exited gracefully.")
 }
