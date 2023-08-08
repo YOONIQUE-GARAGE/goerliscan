@@ -15,8 +15,12 @@ type NetworkConfig struct {
 	URL string `toml:"url"`
 }
 
+type ModeConfig struct {
+	Start int `toml:"start"`
+	Restart int `toml:"restart"`
+}
 type LogConfig struct {
-	Level   string
+	Level   string 
 	Fpath   string
 	Msize   int
 	Mage    int
@@ -26,6 +30,7 @@ type LogConfig struct {
 type Config struct {
 	Database DatabaseConfig `toml:"database"`
 	Netowrk NetworkConfig `toml:"network"`
+	Mode ModeConfig `toml:"mode"`
 	Log LogConfig `toml:"log"`
 }	
 

@@ -7,9 +7,11 @@ host = "mongodb://localhost:27017"
 name = "goerliscan"
 
 # 0, 1 - db에 저장된 블록높이 마지막, 특정번호 - 이 특정 번호로 실행 
-[mode]
-# start = 0
 # db에 저장된 블록높이 마지막 = 1
+[mode]
+start = 0 
+restart = 1 
+# custom = 9448370
 
 [log]
 level = "debug" # debug or info

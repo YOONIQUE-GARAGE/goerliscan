@@ -75,9 +75,9 @@ func NewModel(config *config.Config) (*Model, error) {
 	colTransaction := db.Collection("transaction")
 	model := &Model{
 		colHeader: colHeader,
-		colBlock:      colBlock,
+		colBlock: colBlock,
 		colTransaction: colTransaction,
-		db:            db,
+		db: db,
 	}
 	return model, nil
 }

@@ -11,14 +11,18 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-func StartScanner(cf *config.Config, headerModel *model.Model, blockModel *model.Model, transactionModel *model.Model) error {
+// 1. 함수 인자 확인(model, config)
+func StartScanner(cf *config.Config, md *model.Model) error {
+	// Initialize mode
+	// Start :=   cf.Mode.Start
+	// Restart := cf.Mode.Restart
+
 	// Initialize ethclient
 	client, err := ethclient.Dial(cf.Netowrk.URL)
 	if err != nil {
 		logger.Error(err)
 		panic(err)
 	}
-
 	// make go Channels
 	header := make(chan *types.Header)
 	// Subscribe to new block headers
@@ -28,9 +32,6 @@ func StartScanner(cf *config.Config, headerModel *model.Model, blockModel *model
 		panic(err)
 	}
 
-	// Create separate wait groups for each type of data
-	// var wg sync.WaitGroup
-	//var wgBlock sync.WaitGroup
 	for {
 		select {
 		case err := <-sub.Err():
@@ -42,12 +43,12 @@ func StartScanner(cf *config.Config, headerModel *model.Model, blockModel *model
 				continue
 			}
 			// Get the latest block number from the database
-			latestBlockNumberDB, err := blockModel.GetLatestBlockNumber()
+			latestBlockNumberDB, err := md.GetLatestBlockNumber()
 			if err != nil {
 				logger.Debug("GetLatestBlockNumber: Can't get latestBlockNumberDB")
 				continue
 			}
-			 
+
 			// Get the latest block number from the client
 			latestBlockNumber := block.Number().Uint64()
 		
@@ -82,20 +83,20 @@ func StartScanner(cf *config.Config, headerModel *model.Model, blockModel *model
 						}
 						clonedBlock.Transactions = append(clonedBlock.Transactions, t.Hash)
 						// Save the transaction to the database
-						err = transactionModel.SaveTransaction(&t)
+						err = md.SaveTransaction(&t)
 						if err != nil {
 							logger.Debug("SaveTransaction: Can't save the transaction")
 							continue
 						}
 					}
 					// Save the Header to the database	
-					err = headerModel.SaveHeader(&clonedHeader)
+					err = md.SaveHeader(&clonedHeader)
 					if err != nil {
 							logger.Debug("SaveHeader: Can't save header")
 							continue
 					}
 					// Save the block to the database
-					err = blockModel.SaveBlock(&clonedBlock)
+					err = md.SaveBlock(&clonedBlock)
 					if err != nil {
 						logger.Debug("SaveBlock: Can't save the block")
 						continue
