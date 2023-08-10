@@ -84,7 +84,6 @@ func NewModel(config *config.Config) (*Model, error) {
 
 // Get Header Data to th ethclient
 func GetHeaderData(header *types.Header, block *types.Block, c chan Header){
-	logger.Debug("GetHeaderData: start")
 	timestamp := int64(block.Time())
 	timeUTC := time.Unix(timestamp, 0).UTC()
 	utcTimeFormatted := timeUTC.Format("2006-01-02 15:04:05 AM MST")
@@ -102,7 +101,6 @@ func GetHeaderData(header *types.Header, block *types.Block, c chan Header){
 
 // Get Block Data to th ethclient
 func GetBlockData(header *types.Header, block *types.Block, c chan Block) {
-	logger.Debug("GetBlockData: start")
 	gasUsed := block.GasUsed()
 	baseFeePerGas := block.BaseFee()
 	burntFees := new(big.Int).Mul(baseFeePerGas, new(big.Int).SetUint64(gasUsed))
@@ -126,7 +124,6 @@ func GetBlockData(header *types.Header, block *types.Block, c chan Block) {
 }
 // Get Txs Data to th ethclient
 func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transaction, block *types.Block) (Transaction, error) {
-	logger.Debug("GetTxsData: start")
 	signer := types.LatestSignerForChainID(tx.ChainId())
 	sender, err := types.Sender(signer, tx)
 	if err != nil {
@@ -182,7 +179,7 @@ func GetTxsData(client *ethclient.Client, header *types.Header, tx *types.Transa
 func (m *Model) GetLatestBlockNumber() (uint64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
+ 
 	opts := options.FindOne().SetSort(bson.M{"blockNumber": -1})
 
 	var result Block
@@ -194,25 +191,23 @@ func (m *Model) GetLatestBlockNumber() (uint64, error) {
 		logger.Debug("GetLatestBlockNumber: Can't get latestBlockNumber")
 		return 0, err
 	}
-	logger.Debug(fmt.Sprintf("GetLatestBlockNumber: %d", result.BlockNumber))
+	// logger.Debug(fmt.Sprintf("GetLatestBlockNumber: %d", result.BlockNumber))
 	return result.BlockNumber, nil
 }
 
 // Save Header
 func (m *Model) SaveHeader(header *Header) error {
-	logger.Debug("SaveHeader: start")
-	result, err := m.colHeader.InsertOne(context.Background(), header)
+	_, err := m.colHeader.InsertOne(context.Background(), header)
 	if err != nil {
 		logger.Debug("Can't Insert HeaderData")
 		return err
 	}
-	logger.Debug(fmt.Sprintf("SaveHeader: HeaderInsertId %s", result.InsertedID))
+	//logger.Debug(fmt.Sprintf("SaveHeader: HeaderInsertId %s", result.InsertedID))
 	return nil
 }
 
 // Save Blcok
 func (m *Model) SaveBlock(block *Block) error {
-	logger.Debug("SaveBlock: start")
 	result, err := m.colBlock.InsertOne(context.Background(), block)
 	if err != nil {
 		logger.Debug("SaveBlock: Can't Insert Block")
@@ -224,7 +219,6 @@ func (m *Model) SaveBlock(block *Block) error {
 
 // Save Transaction
 func (m *Model) SaveTransaction(transaction *Transaction) error {
-	logger.Debug("SaveTransaction: start")
 	filter := bson.D{{Key: "hash", Value: transaction.Hash}}
 	opts := options.Replace().SetUpsert(true)
 	result, err := m.colTransaction.ReplaceOne(context.Background(), filter, transaction, opts)
@@ -238,6 +232,24 @@ func (m *Model) SaveTransaction(transaction *Transaction) error {
 		logger.Debug("SaveTransaction: Update Done")
 	}
 	return nil
+}
+
+func FindBlockNumber(m *Model, blockNumber uint64) (uint64, error){
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+ 
+	var result Header
+	err := m.colHeader.FindOne(ctx, bson.M{"blockNumber": blockNumber}).Decode(&result)
+	fmt.Print("dbNumber: ", result.BlockNumber)
+	if err == mongo.ErrNoDocuments {
+		logger.Debug("BlockNumber: Nonexist Documents")
+		return 0, nil
+	} else if err != nil {
+		logger.Debug("BlockNumber: Can't get BlockNumber")
+		return 0, err
+	}
+	logger.Debug(fmt.Sprintf("GetLatestBlockNumber: %d", result.BlockNumber))
+	return result.BlockNumber, nil
 }
 
 
