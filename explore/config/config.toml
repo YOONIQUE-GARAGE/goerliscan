@@ -1,7 +1,7 @@
 # config/config.toml
 
 [database]
-host = "mongodb://localhost:27017"
+host = "mongodb+srv://codestates:0000@cluster0.fye6g.mongodb.net/goerliscan?retryWrites=true&w=majority"
 name = "goerliscan"
 
 [log]

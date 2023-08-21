@@ -62,17 +62,15 @@ func main() {
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
 		logger.Warn("Shutdown Server ...")
-
+	
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := mapi.Shutdown(ctx); err != nil {
 			logger.Error("Server Shutdown:", err)
 		}
-
-		select {
-			case <-ctx.Done():
-				logger.Info("timeout of 5 seconds.")
-		}
+	
+		<-ctx.Done()
+		logger.Info("Timeout of 5 seconds for graceful shutdown.")
 
 		logger.Info("Server exiting")
 	}

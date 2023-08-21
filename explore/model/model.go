@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"rnd/goerliscan/explore/config"
 	"rnd/goerliscan/explore/logger"
@@ -27,19 +26,19 @@ type Model struct {
 type Header struct {
 	BlockNumber  	uint64      `bson:"blockNumber"`
 	ParentHash		string      `bson:"parentHash"`
-	Bloom					[]byte 			`bson:"bloom"`
-	Time         	string      `bson:"timestamp"`
+	Bloom					string 			`bson:"bloom"`
+	Time         	string      `bson:"time"`
 	Nonce        	string      `bson:"nonce"`
 }
 
 type Block struct {
 	BlockNumber  	uint64      `bson:"blockNumber"`
-	FeeRecipient  string	    `bson:"feeRecipient"`
+	Miner  				string	    `bson:"miner"`
 	BlockSize			uint64      `bson:"blockSize"`
 	GasUsed      	uint64      `bson:"gasUsed"`
 	GasLimit     	uint64      `bson:"gasLimit"`
-	BaseFeePerGas *big.Int    `bson:"baseFeePerGas"`
-	BurntFees			*big.Int		`bson:"burntFees"`
+	BaseFeePerGas uint64      `bson:"baseFeePerGas"`
+	BurntFees			uint64		  `bson:"burntFees"`
 	ExtraData			string		  `bson:"extraData"`
 	BlockHash    	string      `bson:"blockHash"`
 	StateRoot     string			`bson:"stateRoot"`
@@ -49,14 +48,13 @@ type Block struct {
 type Transaction struct {
 	Hash        		string  	 `bson:"hash"`
 	Status      		string  	 `bson:"status"`
-	Time        		string  	 `bson:"timestamp"`
+	Time        		string  	 `bson:"time"`
 	From        		string  	 `bson:"from"`
 	To          		string  	 `bson:"to"` // return nil for contract
-	Value      			*big.Int	 `bson:"amount"`
-	TransactionFee 	*big.Int 	 `bson:"transactionFee"`
-	GasPrice    		*big.Int   `bson:"gasPrice"`
-	GasUsed					uint64	 	 `bson:"gasUsed"`
-	GasLimit    		uint64  	 `bson:"gasLimit"`
+	Value      			uint64	 	 `bson:"amount"`
+	TransactionFee 	uint64 	   `bson:"transactionFee"`
+	GasPrice    		uint64     `bson:"gasPrice"`
+	GasUsed					uint64 	 	 `bson:"gasUsed"`
 	BlockHash   		string  	 `bson:"blockHash"`
 	BlockNumber 		uint64  	 `bson:"blockNumber"`
 }
@@ -118,12 +116,12 @@ func (m *Model) GetAll() (AllData, error){
 	for cursor.Next(ctx) {
 		var header Header
 		if err := cursor.Decode(&header); err != nil {
-			logger.Debug("Can't unmarshalling")
+			logger.Debug("Header: Can't unmarshalling")
 		}
 		headers = append(headers, header)
 		_, err := json.MarshalIndent(header, "prefix string", " ")
 		if err != nil {
-			logger.Debug("Can't MarshalIndent")
+			logger.Debug("Header: Can't MarshalIndent")
 		}
 	}
 	// Block
@@ -136,12 +134,12 @@ func (m *Model) GetAll() (AllData, error){
 	for cursor.Next(ctx) {
 		var block Block
 		if err := cursor.Decode(&block); err != nil {
-			logger.Debug("Can't unmarshalling")
+			logger.Debug("Block: Can't unmarshalling")
 		}
 		blocks = append(blocks, block)
 		_, err := json.MarshalIndent(block, "prefix string", " ")
 		if err != nil {
-			logger.Debug("Can't MarshalIndent")
+			logger.Debug("Block: Can't MarshalIndent")
 		}
 	}
 	// Transaction
@@ -154,12 +152,12 @@ func (m *Model) GetAll() (AllData, error){
 	for cursor.Next(ctx) {
 		var tx Transaction
 		if err := cursor.Decode(&tx); err != nil {
-			logger.Debug("Can't unmarshalling")
+			logger.Debug("Transaction: Can't unmarshalling")
 		}
 		txs = append(txs, tx)
 		_, err := json.MarshalIndent(tx, "prefix string", " ")
 		if err != nil {
-			logger.Debug("Can't MarshalIndent")
+			logger.Debug("Transaction: Can't MarshalIndent")
 		}
 	}
 
